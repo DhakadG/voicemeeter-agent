@@ -1,0 +1,47 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build
+        run: dotnet build VoicemeeterAgent.sln -c Release --nologo
+
+      - name: Volume curve self-test
+        run: .\src\VoicemeeterAgent\bin\Release\net8.0-windows\VoicemeeterAgent.exe --selftest
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $name = if ($env:GITHUB_REF_TYPE -eq 'tag') { "VoicemeeterAgent-$env:GITHUB_REF_NAME" }
+                  else { "VoicemeeterAgent-$($env:GITHUB_SHA.Substring(0,7))" }
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Compress-Archive -Path src/VoicemeeterAgent/bin/Release/net8.0-windows/* -DestinationPath "dist/$name.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VoicemeeterAgent
+          path: dist/*.zip
+
+      - name: Publish release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+          generate_release_notes: true

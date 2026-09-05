@@ -11,8 +11,11 @@ namespace VoicemeeterAgent;
 internal static class Program
 {
     [STAThread]
-    private static void Main()
+    private static int Main(string[] args)
     {
+        // Headless check of the volume curves; used by CI and by "VoicemeeterAgent.exe --selftest".
+        if (args.Contains("--selftest")) return VolumeCurve.SelfTest() ? 0 : 1;
+
         // ── Single-instance guard ────────────────────────────────────────────
         // Prevents a second tray icon when Windows launches the app at startup
         // while a previous instance is already running.
@@ -20,7 +23,7 @@ internal static class Program
             initiallyOwned: true,
             name: "Global\\VoicemeeterAgent_SingleInstance",
             out bool isNewInstance);
-        if (!isNewInstance) return;
+        if (!isNewInstance) return 0;
 
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
@@ -47,7 +50,7 @@ internal static class Program
                 "VoicemeeterAgent",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
-            return;
+            return 1;
         }
 
         VoicemeeterApi.PreloadDll(dllPath);
@@ -70,7 +73,13 @@ internal static class Program
         sync.Start();
 
         Application.Run();          // message loop; exits on "Exit" menu click
+        return 0;
     }
+
+    /// <summary>Status dot colours. A disabled menu item would grey these out, so the item stays enabled.</summary>
+    private static readonly Color ConnectedColor = Color.FromArgb(0, 200, 83);
+    private static readonly Color DisconnectedColor = Color.FromArgb(200, 60, 60);
+    private static readonly Color ConnectingColor = Color.FromArgb(150, 150, 150);
 
     // ─── Tray icon construction ───────────────────────────────────────────────
 
@@ -79,17 +88,25 @@ internal static class Program
         var menu = new ContextMenuStrip();
 
         // ── Status indicator (non-clickable, informational) ───────────────────
+        // Kept enabled with no Click handler: a disabled ToolStripMenuItem is drawn greyed out,
+        // which swallows the ForeColor and leaves the dot the same colour in both states.
         var statusItem = new ToolStripMenuItem("⬤  Connecting…")
         {
-            Enabled = false
+            ForeColor = ConnectingColor
         };
         sync.ConnectionStateChanged += connected =>
-            uiContext.Post(_ => statusItem.Text = connected ? "⬤  Connected" : "○  Disconnected", null);
+            uiContext.Post(_ =>
+            {
+                statusItem.Text = connected ? "⬤  Connected" : "⬤  Disconnected";
+                statusItem.ForeColor = connected ? ConnectedColor : DisconnectedColor;
+            }, null);
 
         var statusSeparator = new ToolStripSeparator();
 
         var syncNowItem = new ToolStripMenuItem("Sync Now");
         syncNowItem.Click += (_, _) => sync.SyncNow();
+
+        var volumeItem = BuildVolumeMenu(sync);
 
         var devicesItem = BuildDevicesMenu(sync);
 
@@ -125,7 +142,7 @@ internal static class Program
         menu.Items.AddRange(new ToolStripItem[]
         {
             statusItem, statusSeparator,
-            syncNowItem, devicesItem, watchdogItem, startupItem, separator, exitItem
+            syncNowItem, volumeItem, devicesItem, watchdogItem, startupItem, separator, exitItem
         });
 
         return new NotifyIcon
@@ -134,6 +151,77 @@ internal static class Program
             Text = "VoicemeeterAgent",
             ContextMenuStrip = menu,
         };
+    }
+
+    // ─── Volume curve menu ────────────────────────────────────────────────────
+
+    /// <summary>Selectable volume curves, in menu order.</summary>
+    private static readonly (VolumeProfile Profile, string Label)[] VolumeProfiles =
+    {
+        (VolumeProfile.Knee,      "Knee — 50% = -20 dB"),
+        (VolumeProfile.LinearDb,  "Linear dB — 50% = -30 dB (v1.0)"),
+        (VolumeProfile.Gamma2,    "Squared — 50% = -12 dB"),
+        (VolumeProfile.Amplitude, "Amplitude — 50% = -6 dB (v1.1)"),
+    };
+
+    /// <summary>Selectable gain floors, in menu order. A higher floor spreads less dB over the slider.</summary>
+    private static readonly float[] GainFloors = { -40f, -50f, -60f };
+
+    /// <summary>
+    /// Builds the "Volume Curve" submenu: one entry per curve shape, plus the gain floor.
+    /// Picking either re-syncs immediately so the change is audible without touching the slider.
+    /// </summary>
+    private static ToolStripMenuItem BuildVolumeMenu(SyncApp sync)
+    {
+        var root = new ToolStripMenuItem("Volume Curve");
+        var profileItems = new List<(VolumeProfile Profile, ToolStripMenuItem Item)>();
+        var floorItems = new List<(float Floor, ToolStripMenuItem Item)>();
+
+        void Refresh()
+        {
+            foreach (var (profile, item) in profileItems)
+                item.Checked = sync.Config.Profile == profile;
+            foreach (var (floor, item) in floorItems)
+                item.Checked = MathF.Abs(sync.Config.MinGainDb - floor) < 0.01f;
+        }
+
+        foreach (var (profile, label) in VolumeProfiles)
+        {
+            var captured = profile;
+            var item = new ToolStripMenuItem(label);
+            item.Click += (_, _) =>
+            {
+                sync.Config.Profile = captured;
+                sync.Config.Save();
+                Refresh();
+                sync.SyncNow();
+            };
+            profileItems.Add((captured, item));
+            root.DropDownItems.Add(item);
+        }
+
+        root.DropDownItems.Add(new ToolStripSeparator());
+
+        var floorRoot = new ToolStripMenuItem("Floor (volume at 0%)");
+        foreach (var floor in GainFloors)
+        {
+            var captured = floor;
+            var item = new ToolStripMenuItem($"{captured:0} dB");
+            item.Click += (_, _) =>
+            {
+                sync.Config.MinGainDb = captured;
+                sync.Config.Save();
+                Refresh();
+                sync.SyncNow();
+            };
+            floorItems.Add((captured, item));
+            floorRoot.DropDownItems.Add(item);
+        }
+        root.DropDownItems.Add(floorRoot);
+
+        root.DropDownOpening += (_, _) => Refresh();
+        Refresh();
+        return root;
     }
 
     // ─── Bus device menu ──────────────────────────────────────────────────────

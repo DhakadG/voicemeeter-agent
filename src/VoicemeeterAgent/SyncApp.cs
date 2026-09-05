@@ -329,26 +329,13 @@ internal sealed class SyncApp : IDisposable
 
     // ─── Helpers ─────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Converts a Windows volume scalar [0..1] to Voicemeeter gain in dB.
-    /// The Windows scalar is an amplitude ratio, so the matching gain is 20*log10(scalar):
-    /// 100% = 0 dB, 50% = -6 dB, 25% = -12 dB. Halving the slider halves the amplitude,
-    /// which is what every other volume control does.
-    /// The previous mapping spread -60..0 dB evenly across the slider, so every 10% step
-    /// doubled or halved the level. Result is clamped to [MinGainDb, 0].
-    /// </summary>
+    /// <summary>Converts a Windows volume scalar [0..1] to Voicemeeter gain in dB.</summary>
     private float ScalarToDb(float scalar)
-    {
-        if (scalar <= 0f) return _config.MinGainDb;
-        return Math.Clamp(20f * MathF.Log10(scalar), _config.MinGainDb, 0f);
-    }
+        => VolumeCurve.ToDb(_config.Profile, _config.MinGainDb, scalar);
 
-    /// <summary>
-    /// Converts a Voicemeeter gain in dB back to a Windows scalar [0..1].
-    /// Exact inverse of <see cref="ScalarToDb"/>.
-    /// </summary>
+    /// <summary>Converts a Voicemeeter gain in dB back to a Windows scalar [0..1].</summary>
     private float DbToScalar(float dB)
-        => Math.Clamp(MathF.Pow(10f, Math.Clamp(dB, _config.MinGainDb, 0f) / 20f), 0f, 1f);
+        => VolumeCurve.ToScalar(_config.Profile, _config.MinGainDb, dB);
 
     /// <summary>Forces an immediate re-sync of current Windows volume to Voicemeeter.</summary>
     public void SyncNow()
