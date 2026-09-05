@@ -7,6 +7,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Read-only by default; the release job below opts up to contents: write.
+permissions:
+  contents: read
+
 # Actions are pinned to full commit SHAs: a tag is mutable, so @v4 would let the
 # action's owner change what runs here without the workflow changing.
 jobs:
@@ -47,7 +51,7 @@ jobs:
 
   release:
     needs: build
-    if: github.ref_type == 'tag'
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     # The only job that writes: it creates the GitHub Release.
     permissions:

@@ -81,6 +81,10 @@ internal sealed class AppConfig
     /// </summary>
     private static AppConfig Validate(AppConfig config)
     {
+        // JsonStringEnumConverter accepts integers by default, so "Profile": 99 deserializes to an
+        // undefined enum member that would silently fall through to the switch defaults.
+        if (!Enum.IsDefined(config.Profile)) config.Profile = VolumeProfile.Knee;
+
         config.MinGainDb = float.IsFinite(config.MinGainDb)
             ? Math.Clamp(config.MinGainDb, -96f, -24f)
             : -60f;
@@ -163,7 +167,7 @@ internal static class VolumeCurve
 
         // At or below the floor the slider is at zero. Without this the log profiles land on a
         // non-zero scalar (Gamma2 at a -40 dB floor gives 0.1), so pulling the Voicemeeter fader
-        // all the way down would leave Windows sitting at 10%% instead of silent.
+        // all the way down would leave Windows sitting at 10% instead of silent.
         if (dB <= minDb) return 0f;
 
         float scalar = profile switch

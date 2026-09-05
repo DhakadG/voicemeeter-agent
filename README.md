@@ -44,7 +44,8 @@ The status dot at the top is green when Voicemeeter is connected and red when it
 ### Volume curves
 
 Every curve reaches 0 dB at 100% and the floor at 0%. They differ in how the dB range is spread
-across the slider, which is what decides how big each volume step feels.
+across the slider, which is what decides how big each volume step feels. The figures below are for
+the default −60 dB floor; a different floor rescales all of them.
 
 | Curve (`Profile` value) | 25% | 50% | 75% | 90% | Feel |
 |---|---|---|---|---|---|
@@ -81,11 +82,15 @@ after the device has been visible for two consecutive checks.
 }
 ```
 
-- `Profile` — `Knee`, `LinearDb`, `Gamma2` or `Amplitude`
-- `MinGainDb` — clamped on load to −96..−24 dB; values outside that break the curve inverses
-- `Bus` — 0 = A1, 1 = A2, 2 = A3
-- `Type` — 1 = MME, 3 = WDM, 4 = KS, 5 = ASIO
-- `Name` — exact device name as Voicemeeter reports it
+| Key | Values | Notes |
+|---|---|---|
+| `Profile` | `Knee`, `LinearDb`, `Gamma2`, `Amplitude` | `Gamma2` is the stored name of the **Squared** curve. Anything unrecognised falls back to `Knee` |
+| `MinGainDb` | −96 to −24 | Clamped to that range on load, so the curve inverses stay well defined. The tray offers −40/−50/−60; other values in range work but only from the file |
+| `DeviceWatchdogEnabled` | `true`/`false` | Same as the tray toggle |
+| `DeviceWatchdogIntervalMs` | ≥ 500 | Smaller values are raised to 500 on load |
+| `Buses[].Bus` | 0 = A1, 1 = A2, 2 = A3 | |
+| `Buses[].Type` | 1 = MME, 3 = WDM, 4 = KS, 5 = ASIO | |
+| `Buses[].Name` | string | Exact device name as Voicemeeter reports it |
 
 ## Build
 
