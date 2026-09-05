@@ -1,0 +1,69 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+# Read-only by default; the release job below opts up to contents: write.
+permissions:
+  contents: read
+
+# Actions are pinned to full commit SHAs: a tag is mutable, so @v4 would let the
+# action's owner change what runs here without the workflow changing.
+jobs:
+  build:
+    runs-on: windows-latest
+    # Read-only. Only the tag-gated release job below needs write access.
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # Don't leave the job's token in .git/config for later steps to reuse.
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build
+        run: dotnet build VoicemeeterAgent.sln -c Release --nologo
+
+      - name: Volume curve self-test
+        run: .\src\VoicemeeterAgent\bin\Release\net8.0-windows\VoicemeeterAgent.exe --selftest
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $name = if ($env:GITHUB_REF_TYPE -eq 'tag') { "VoicemeeterAgent-$env:GITHUB_REF_NAME" }
+                  else { "VoicemeeterAgent-$($env:GITHUB_SHA.Substring(0,7))" }
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Compress-Archive -Path src/VoicemeeterAgent/bin/Release/net8.0-windows/* -DestinationPath "dist/$name.zip"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: VoicemeeterAgent
+          path: dist/*.zip
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    # The only job that writes: it creates the GitHub Release.
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: VoicemeeterAgent
+          path: dist
+
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        with:
+          files: dist/*.zip
+          generate_release_notes: true
