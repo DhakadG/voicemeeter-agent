@@ -79,7 +79,6 @@ internal static class Program
     /// <summary>Status dot colours. A disabled menu item would grey these out, so the item stays enabled.</summary>
     private static readonly Color ConnectedColor = Color.FromArgb(0, 200, 83);
     private static readonly Color DisconnectedColor = Color.FromArgb(200, 60, 60);
-    private static readonly Color ConnectingColor = Color.FromArgb(150, 150, 150);
 
     // ─── Tray icon construction ───────────────────────────────────────────────
 
@@ -90,9 +89,11 @@ internal static class Program
         // ── Status indicator (non-clickable, informational) ───────────────────
         // Kept enabled with no Click handler: a disabled ToolStripMenuItem is drawn greyed out,
         // which swallows the ForeColor and leaves the dot the same colour in both states.
-        var statusItem = new ToolStripMenuItem("⬤  Connecting…")
+        // Starts disconnected: SyncApp only raises ConnectionStateChanged on a change, so with
+        // Voicemeeter absent at launch nothing fires and a "Connecting…" label would never clear.
+        var statusItem = new ToolStripMenuItem("⬤  Disconnected")
         {
-            ForeColor = ConnectingColor
+            ForeColor = DisconnectedColor
         };
         sync.ConnectionStateChanged += connected =>
             uiContext.Post(_ =>

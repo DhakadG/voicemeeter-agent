@@ -46,12 +46,12 @@ The status dot at the top is green when Voicemeeter is connected and red when it
 Every curve reaches 0 dB at 100% and the floor at 0%. They differ in how the dB range is spread
 across the slider, which is what decides how big each volume step feels.
 
-| Curve | 25% | 50% | 75% | 90% | Feel |
+| Curve (`Profile` value) | 25% | 50% | 75% | 90% | Feel |
 |---|---|---|---|---|---|
-| Knee | −40 dB | −20 dB | −10 dB | −4 dB | Quiet range passes quickly, loud range gets twice the resolution of Linear dB |
-| Linear dB | −45 dB | −30 dB | −15 dB | −6 dB | Even 6 dB per 10% everywhere. The v1.0 curve |
-| Squared | −24 dB | −12 dB | −5 dB | −1.8 dB | Between the two below |
-| Amplitude | −12 dB | −6 dB | −2.5 dB | −0.9 dB | Slider position is the amplitude ratio. The v1.1 curve |
+| Knee (`Knee`) | −40 dB | −20 dB | −10 dB | −4 dB | Quiet range passes quickly, loud range gets twice the resolution of Linear dB |
+| Linear dB (`LinearDb`) | −45 dB | −30 dB | −15 dB | −6 dB | Even 6 dB per 10% everywhere. The v1.0 curve |
+| Squared (`Gamma2`) | −24 dB | −12 dB | −5 dB | −1.8 dB | Between the two below |
+| Amplitude (`Amplitude`) | −12 dB | −6 dB | −2.5 dB | −0.9 dB | Slider position is the amplitude ratio. The v1.1 curve |
 
 The floor (gain at 0%) is selectable at −40, −50 or −60 dB. Raising the floor spreads less dB over
 the same slider, so every step gets smaller.
@@ -82,6 +82,7 @@ after the device has been visible for two consecutive checks.
 ```
 
 - `Profile` — `Knee`, `LinearDb`, `Gamma2` or `Amplitude`
+- `MinGainDb` — clamped on load to −96..−24 dB; values outside that break the curve inverses
 - `Bus` — 0 = A1, 1 = A2, 2 = A3
 - `Type` — 1 = MME, 3 = WDM, 4 = KS, 5 = ASIO
 - `Name` — exact device name as Voicemeeter reports it

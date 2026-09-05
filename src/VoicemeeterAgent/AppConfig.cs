@@ -58,7 +58,7 @@ internal sealed class AppConfig
         try
         {
             if (File.Exists(Path))
-                return JsonSerializer.Deserialize<AppConfig>(File.ReadAllText(Path)) ?? new AppConfig();
+                return Validate(JsonSerializer.Deserialize<AppConfig>(File.ReadAllText(Path)) ?? new AppConfig());
         }
         catch { /* corrupt or unreadable — fall back to defaults */ }
         return new AppConfig();
@@ -72,6 +72,20 @@ internal sealed class AppConfig
             File.WriteAllText(Path, JsonSerializer.Serialize(this, JsonOptions));
         }
         catch { /* best effort */ }
+    }
+
+    /// <summary>
+    /// Clamps hand-edited values into a range the curves can handle. A floor of 0 dB divides by
+    /// zero in the LinearDb inverse, and one of -20 dB does the same in the Knee inverse; either
+    /// produces NaN, which NAudio rejects on the poll thread and takes the process down.
+    /// </summary>
+    private static AppConfig Validate(AppConfig config)
+    {
+        config.MinGainDb = float.IsFinite(config.MinGainDb)
+            ? Math.Clamp(config.MinGainDb, -96f, -24f)
+            : -60f;
+        config.DeviceWatchdogIntervalMs = Math.Max(config.DeviceWatchdogIntervalMs, 500);
+        return config;
     }
 
     /// <summary>Returns the binding for <paramref name="bus"/>, creating it if absent.</summary>
@@ -147,6 +161,11 @@ internal static class VolumeCurve
     {
         dB = Math.Clamp(dB, minDb, 0f);
 
+        // At or below the floor the slider is at zero. Without this the log profiles land on a
+        // non-zero scalar (Gamma2 at a -40 dB floor gives 0.1), so pulling the Voicemeeter fader
+        // all the way down would leave Windows sitting at 10%% instead of silent.
+        if (dB <= minDb) return 0f;
+
         float scalar = profile switch
         {
             VolumeProfile.LinearDb => 1f - dB / minDb,
@@ -167,20 +186,25 @@ internal static class VolumeCurve
     /// </summary>
     public static bool SelfTest()
     {
-        const float minDb = -60f;
         bool ok = true;
 
+        foreach (float minDb in new[] { -40f, -50f, -60f, -96f })
         foreach (VolumeProfile profile in Enum.GetValues<VolumeProfile>())
         {
             ok &= MathF.Abs(ToDb(profile, minDb, 1f) - 0f) < 0.01f;
             ok &= MathF.Abs(ToDb(profile, minDb, 0f) - minDb) < 0.01f;
 
-            // Round trip. Below the floor every profile saturates, so only check the audible part.
+            // Round trip. A scalar that maps onto the floor is clamped and cannot come back,
+            // so only check the part of the slider that stays above it.
             for (float s = 0.05f; s <= 1f; s += 0.05f)
             {
-                float back = ToScalar(profile, minDb, ToDb(profile, minDb, s));
-                ok &= MathF.Abs(back - s) < 0.005f;
+                float dB = ToDb(profile, minDb, s);
+                if (dB <= minDb + 0.01f) continue;
+                ok &= MathF.Abs(ToScalar(profile, minDb, dB) - s) < 0.005f;
             }
+
+            // The floor must map back to a silent slider, not to a non-zero scalar.
+            ok &= ToScalar(profile, minDb, minDb) == 0f;
 
             // Monotonic: louder slider must never mean lower gain.
             float previous = float.NegativeInfinity;

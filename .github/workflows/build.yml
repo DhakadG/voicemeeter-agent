@@ -7,16 +7,22 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Actions are pinned to full commit SHAs: a tag is mutable, so @v4 would let the
+# action's owner change what runs here without the workflow changing.
 jobs:
   build:
     runs-on: windows-latest
+    # Read-only. Only the tag-gated release job below needs write access.
     permissions:
-      contents: write
+      contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # Don't leave the job's token in .git/config for later steps to reuse.
+          persist-credentials: false
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
         with:
           dotnet-version: '8.0.x'
 
@@ -34,14 +40,26 @@ jobs:
           New-Item -ItemType Directory -Force dist | Out-Null
           Compress-Archive -Path src/VoicemeeterAgent/bin/Release/net8.0-windows/* -DestinationPath "dist/$name.zip"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: VoicemeeterAgent
           path: dist/*.zip
 
-      - name: Publish release
-        if: github.ref_type == 'tag'
-        uses: softprops/action-gh-release@v2
+  release:
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    # The only job that writes: it creates the GitHub Release.
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: VoicemeeterAgent
+          path: dist
+
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           files: dist/*.zip
           generate_release_notes: true
