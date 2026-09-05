@@ -39,6 +39,7 @@ internal static class Program
 
         // ── Migrate old startup registry key (one-time) ───────────────────────
         Startup.MigrateOldKey();
+        Startup.RepointIfMoved();
 
         // ── Resolve DLL ──────────────────────────────────────────────────────
         var dllPath = VoicemeeterApi.FindDllPath();
@@ -356,6 +357,22 @@ internal static class Startup
         {
             key.SetValue(AppName, oldPath);
             key.DeleteValue(OldAppName, throwOnMissingValue: false);
+        }
+    }
+
+    /// <summary>
+    /// Repoints an existing Run entry at the current exe when it names a different path.
+    /// The release folder carries the version number, so without this every upgrade leaves Windows
+    /// starting the previous version, or nothing once that folder is deleted.
+    /// Whichever copy of the agent ran last owns the entry.
+    /// </summary>
+    public static void RepointIfMoved()
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(RunKey, writable: true);
+        if (key?.GetValue(AppName) is string path &&
+            !string.Equals(path, ExePath, StringComparison.OrdinalIgnoreCase))
+        {
+            key.SetValue(AppName, ExePath);
         }
     }
 
