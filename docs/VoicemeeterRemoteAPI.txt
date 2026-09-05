@@ -1,0 +1,531 @@
+VOICEMEETER REMOTE API - Documentation v3.1.0.1
+VB-Audio Software | DEC 2023 | V.Burel
+================================================================
+
+TABLE OF CONTENTS
+-----------------
+1. Introduction
+2. Installation / Package Content / Licensing
+3. API General Policy
+4. Link to Voicemeeter DLL
+5. Login / Logout
+6. Special Commands
+7. MacroButtons Functions
+8. Get/Set Parameters & Synchronization
+9. Real Time Level Meter & MIDI Messages
+10. Parameters List (Strip, Bus, FX, System, Tape, VBAN, Relative)
+11. Audio Device Enumeration
+12. VB-Audio Callback
+13. Voicemeeter APO Approach
+
+
+================================================================
+1. INTRODUCTION
+================================================================
+VoicemeeterRemote API is based on a standard DLL providing all functions to control
+Voicemeeter Audio Engine by any user application programmed in any language.
+Supports up to 4 client applications simultaneously.
+
+================================================================
+2. INSTALLATION / PACKAGE / LICENSING
+================================================================
+
+INSTALLATION:
+Voicemeeter must be installed and running.
+VoicemeeterRemote.dll must be linked to the user application.
+
+PACKAGE CONTENT:
+- VoicemeeterRemote.h (C Header file)
+- VoicemeeterRemoteAPI.pdf (this doc)
+- ReadMe.txt
+- Example0: Win32 C client example
+- Script: text files for parameter groups
+- Matrix 8x8: Audio Processing example
+- VMR_OSD: basic OSD example
+- VMR_PLAY: audio Insert processing example
+VoicemeeterRemote.dll installed with Voicemeeter since package 2.0.2.3
+
+LICENSING:
+- Free for testing, educational, personal, collaborative, open source use.
+- Since March 2021: also free for professional/commercial projects.
+- Source code examples free to use only within Voicemeeter Remote API context.
+- Does NOT include Voicemeeter license (donationware; commercial use requires payment).
+- Contact: https://vb-audio.com/Services/contact.htm
+
+================================================================
+3. API GENERAL POLICY
+================================================================
+- All functions use __stdcall convention, return 32-bit integer.
+- Return > 0: result value. Return < 0: error code. Return 0: OK/ZERO.
+- All functions are thread-safe and non-blocking (asynchronous) unless noted.
+- Supported data types: long (32-bit int), char* (ANSI), WCHAR*/unsigned short* (Unicode), float (32-bit).
+
+================================================================
+4. LINK TO VOICEMEETER DLL
+================================================================
+Always link to the DLL installed with current Voicemeeter for compatibility.
+
+// Get install folder from registry
+if (RegistryGetVoicemeeterFolder(szDllName) == FALSE) return -100;
+
+// Select 32 or 64-bit DLL
+if (sizeof(void*) == 8) strcat(szDllName,"\\VoicemeeterRemote64.dll");
+else strcat(szDllName,"\\VoicemeeterRemote.dll");
+
+G_H_Module = LoadLibrary(szDllName);
+iVMR.VBVMR_Login  = (T_VBVMR_Login)GetProcAddress(G_H_Module,"VBVMR_Login");
+iVMR.VBVMR_Logout = (T_VBVMR_Logout)GetProcAddress(G_H_Module,"VBVMR_Logout");
+// etc...
+
+Function: BOOL __cdecl RegistryGetVoicemeeterFolder(char * szDir)
+
+================================================================
+5. LOGIN / LOGOUT
+================================================================
+Uses client/server protocol. Login = register with remote service.
+- Login/Logout called ONCE at start/end of application.
+- Login works regardless of whether Voicemeeter is running.
+- Voicemeeter can be restarted during an active login session.
+
+rep = iVMR.VBVMR_Login();
+if (rep < 0) { /* error */ }
+if (rep == 1) {
+    // Voicemeeter not running, launch it:
+    iVMR.VBVMR_RunVoicemeeter(2);
+    Sleep(1000);
+}
+
+// Initialize parameters after login:
+ComError = iVMR.VBVMR_IsParametersDirty();
+ComError = iVMR.VBVMR_MacroButton_IsDirty(); // MacroButtons only
+
+// Detect connection/disconnection via ComError >= 0 (connected) or < 0 (disconnected)
+
+IMPORTANT: Call VBVMR_Logout() once at program end.
+
+================================================================
+6. SPECIAL COMMANDS (Write Only)
+================================================================
+Command Name                    Value       Remark
+--------------------------------------------------------------
+Command.Shutdown                1           Shutdown Voicemeeter
+Command.Show                    1           Show Voicemeeter
+Command.Restart                 1           Restart Audio Engine
+Command.Eject                   1           Eject Cassette
+Command.Reset                   1           Reset All configuration
+Command.Save                    String      Complete filename (xml)
+Command.Load                    String      Complete filename (xml)
+Command.Lock                    0 or 1      (Un)Lock GUI
+Command.Button[i].State         0 or 1      Change Macro Button State
+Command.Button[i].StateOnly     0 or 1      Change Button State only
+Command.Button[i].Trigger       0 or 1      Change Trigger Enable State
+Command.Button[i].Color         0 to 8      Change Button Color
+Command.DialogShow.VBANCHAT     0 or 1      Show VBAN-Chat Dialog
+Command.SaveBUSEQ[j]            String      Complete filename (xml)
+Command.LoadBUSEQ[j]            String      Complete filename (xml)
+Command.SaveStripEQ[j]          String      Complete filename (xml)
+Command.LoadStripEQ[j]          String      Complete filename (xml)
+Command.Preset[k].Recall        1           Recall Preset Scene
+
+i = MacroButton ID (zero-based). j = BUS index (zero-based). k = preset index (zero-based).
+
+NOTE: Some commands are exclusive. Shutdown ignores subsequent requests.
+LOAD resets all previous/next requests in the same packet.
+
+Examples:
+  Command.Restart = 1;
+  Command.Load = "C:\My Documents\VMConfig1.xml";
+
+================================================================
+7. MACROBUTTONS FUNCTIONS
+================================================================
+Available since v3.0.1.4 / 2.0.5.4 / 1.0.7.4
+
+long __stdcall VBVMR_MacroButton_GetStatus(long nuLogicalButton, float* pValue, long bitmode);
+long __stdcall VBVMR_MacroButton_SetStatus(long nuLogicalButton, float fValue, long bitmode);
+long __stdcall VBVMR_MacroButton_IsDirty(void);
+
+================================================================
+8. GET/SET PARAMETERS & SYNCHRONIZATION
+================================================================
+
+GET/SET:
+long __stdcall VBVMR_GetParameterFloat(char* szParamName, float* pValue);
+long __stdcall VBVMR_SetParameterFloat(char* szParamName, float Value);
+
+SYNCHRONIZATION:
+long __stdcall VBVMR_IsParametersDirty(void);
+Returns 1 if parameters changed. Call in timer/polling loop.
+
+fDisplayParam = iVMR.VBVMR_IsParametersDirty();
+if (fDisplayParam != 0) UpdateVisibleParameter(...);
+
+MACROBUTTONS SYNC:
+long __stdcall VBVMR_MacroButton_IsDirty(void);
+Returns 1 if any button state changed.
+
+REAL TIME LEVEL METER:
+// Example: 22 input levels for Voicemeeter Banana
+for (vi=0; vi<22; vi++) {
+    NormalLevel = 0.0f;
+    iVMR.VBVMR_GetLevel(0, vi, &NormalLevel);
+    DisplayLevel(dc, NormalLevel);
+}
+
+REAL TIME MIDI:
+Call VBVMR_GetMidiMessage() in sync loop to get MIDI input from device
+selected in Voicemeeter MIDI Mapping Dialog.
+
+================================================================
+9. PARAMETERS LIST
+================================================================
+
+--- INPUT STRIP PARAMETERS ---
+Strip index: zero-based (3 strips on VM, 5 on Banana, 8 on Potato)
+
+Parameter Name              Value Range         Remark
+--------------------------------------------------------------
+Strip[i].Mono               0/1                 Mono Button
+Strip[i].Mute               0/1                 Mute Button
+Strip[i].Solo               0/1                 Solo Button
+Strip[i].MC                 0/1                 Mute Center Button
+Strip[i].Gain               -60 to +12 dB       Gain slider
+Strip[i].GainLayer[j]       -60 to +12 dB       Gain for a bus
+Strip[i].Pan_x              -0.5 to +0.5
+Strip[i].Pan_y              0 to 1.0            (-0.5 to 0.5 for 5.1)
+Strip[i].Color_x            -0.5 to +0.5        Physical Strip Only
+Strip[i].Color_y            0 to 1.0            Physical Strip Only
+Strip[i].fx_x               -0.5 to +0.5        Physical Strip Only
+Strip[i].fx_y               0 to 1.0            Physical Strip Only
+Strip[i].Audibility         0 to 10             Voicemeeter 1 only
+Strip[i].Comp               0 to 10             Compressor Knob
+Strip[i].Comp.GainIn        -24 to +24          COMP: Input Gain
+Strip[i].Comp.Ratio         1 to 8              COMP: Ratio
+Strip[i].Comp.Threshold     -40 to -3 dB        COMP: Threshold
+Strip[i].Comp.Attack        0 to 200 ms
+Strip[i].Comp.Release       0 to 5000 ms
+Strip[i].Comp.Knee          0 to 1
+Strip[i].Comp.GainOut       -24 to +24          COMP: Output Gain
+Strip[i].Comp.MakeUp        0 or 1              COMP: Auto Make Up
+Strip[i].Gate               0 to 10             Gate Knob
+Strip[i].Gate.Threshold     -60 to -10 dB
+Strip[i].Gate.Damping       -60 to -10 dB       GATE: Damping Max
+Strip[i].Gate.BPSidechain   100 to 4000 Hz
+Strip[i].Gate.Attack        0 to 1000 ms
+Strip[i].Gate.Hold          0 to 5000 ms
+Strip[i].Gate.Release       0 to 5000 ms
+Strip[i].Denoiser           0 to 10             Denoiser Knob
+Strip[i].Denoiser.Threshold 0 to 10
+Strip[i].Pitch.On           0/1                 Enable Pitch Fx
+Strip[i].Pitch.DryWet       -100 to +100 %
+Strip[i].Pitch.PitchValue   -12 to +12          semi tone
+Strip[i].Pitch.LoFormant    -12 to +12
+Strip[i].Pitch.MedFormant   -12 to +12
+Strip[i].Pitch.HiFormant    -12 to +12
+Strip[i].Karaoke            0,1,2,3,4           OFF or 4 algorithms
+Strip[i].Limit              -40 to +12 dB
+Strip[i].EQGain1            -12 to +12 dB       Virtual Strip Only
+Strip[i].EQGain2            -12 to +12 dB       Virtual Strip Only
+Strip[i].EQGain3            -12 to +12 dB       Virtual Strip Only
+Strip[i].Label              String              Strip Label
+Strip[i].A1                 0/1                 Out BUS Assignation
+Strip[i].A2                 0/1                 Out BUS Assignation
+Strip[i].A3                 0/1                 Out BUS Assignation
+Strip[i].A4                 0/1                 Out BUS Assignation
+Strip[i].A5                 0/1                 Out BUS Assignation
+Strip[i].B1                 0/1                 Out BUS Assignation
+Strip[i].B2                 0/1                 Out BUS Assignation
+Strip[i].B3                 0/1                 Out BUS Assignation
+Strip[i].FadeTo             String              (dBTarget, msTime)
+Strip[i].FadeBy             String              (dB relativechange, msTime)
+Strip[i].Reverb             0 to 10             Send Level To Reverb
+Strip[i].Delay              0 to 10             Send Level To Delay
+Strip[i].Fx1                0 to 10             Send Level To External Fx1
+Strip[i].Fx2                0 to 10             Send Level To External Fx2
+Strip[i].PostReverb         0/1                 Post Reverb button
+Strip[i].PostDelay          0/1                 Post Delay button
+Strip[i].PostFx1            0/1                 Post Fx1 button
+Strip[i].PostFx2            0/1                 Post Fx2 button
+Strip[i].EQ.on              0/1                 EQ Button
+Strip[i].EQ.AB              0(A) or 1(B)        EQ Memory Slot
+Strip[i].VAIO               0/1                 Physical strip only
+
+PARAMETRIC EQ (Potato, Nov 2022+, hardware inputs):
+Strip[i].EQ.channel[j].cell[k].on      0/1
+Strip[i].EQ.channel[j].cell[k].type    0 to 6
+Strip[i].EQ.channel[j].cell[k].f       20 to 20000 Hz
+Strip[i].EQ.channel[j].cell[k].gain    -12 to +12 dB
+Strip[i].EQ.channel[j].cell[k].q       1 to 100
+  i=strip, j=channel (0-7), k=cell (0-5)
+
+APP CONTROL (Potato only, Write Only):
+Strip[i].App[k].Gain        0.0 to 1.0
+Strip[i].App[k].Mute        0/1
+Strip[i].AppGain            String      (AppName, Gain)
+Strip[i].AppMute            String      (AppName, MuteState)
+Examples:
+  Strip(5).AppGain = ("Skype", 0.5);
+  Strip(5).AppMute = ("Spotify", 1);
+
+STRIP AUDIO DEVICES (physical strip only):
+Strip[i].device.name        String      Read only
+Strip[i].device.sr          samplerate  Read only
+Strip[i].device.wdm         DeviceName  Write only
+Strip[i].device.ks          DeviceName  Write only
+Strip[i].device.mme         DeviceName  Write only
+Strip[i].device.asio        DeviceName  Write only
+
+--- BUS PARAMETERS ---
+Bus index: zero-based (2 on VM, 5 on Banana, 8 on Potato)
+
+Parameter Name              Value Range         Remark
+--------------------------------------------------------------
+Bus[i].Mono                 0/1/2               0=off,1=mono,2=stereo reverse
+Bus[i].Mute                 0/1
+Bus[i].EQ.on                0/1
+Bus[i].EQ.AB                0(A)/1(B)
+Bus[i].Gain                 -60 to +12 dB
+Bus[i].Label                String
+Bus[i].mode.normal          0/1
+Bus[i].mode.Amix            0/1
+Bus[i].mode.Bmix            0/1
+Bus[i].mode.Repeat          0/1
+Bus[i].mode.Composite       0/1
+Bus[i].mode.TVMix           0/1
+Bus[i].mode.UpMix21         0/1
+Bus[i].mode.UpMix41         0/1
+Bus[i].mode.UpMix61         0/1
+Bus[i].mode.CenterOnly      0/1
+Bus[i].mode.LFEOnly         0/1
+Bus[i].mode.RearOnly        0/1
+Bus[i].EQ.channel[j].cell[k].on     0/1
+Bus[i].EQ.channel[j].cell[k].type   0 to 6
+Bus[i].EQ.channel[j].cell[k].f      20 to 20000 Hz
+Bus[i].EQ.channel[j].cell[k].gain   -12 to +12 dB
+Bus[i].EQ.channel[j].cell[k].q      1 to 100
+Bus[i].FadeTo               String      (dBTarget, msTime)
+Bus[i].FadeBy               String      (dB change, msTime)
+Bus[i].Sel                  0/1         BUS SEL Button
+Bus[i].ReturnReverb         0 to 10
+Bus[i].ReturnDelay          0 to 10
+Bus[i].ReturnFx1            0 to 10
+Bus[i].ReturnFx2            0 to 10
+Bus[i].Monitor              1=exclusive sel, 0=unselect all
+Bus[i].VAIO                 0/1         Physical BUS only
+
+FadeTo/FadeBy examples:
+  Strip(0).FadeTo = (-10.0, 500);   // -10 dB in 500ms
+  Strip(0).FadeTo = (-20.0, 2000);  // -20 dB in 2s
+  Bus(0).FadeTo   = (0.0, 1500);    // 0 dB in 1.5s
+
+BUS AUDIO DEVICES (physical bus only):
+Bus[i].device.name          String      Read only
+Bus[i].device.sr            samplerate  Read only
+Bus[i].device.wdm           DeviceName  Write only
+Bus[i].device.ks            DeviceName  Write only
+Bus[i].device.mme           DeviceName  Write only
+Bus[i].device.asio          DeviceName  Write only
+
+--- FX SETTINGS (Voicemeeter Potato) ---
+Fx.Reverb.On        0/1     Switch On/Off
+Fx.Reverb.AB        0(A)/1(B)
+Fx.Delay.On         0/1
+Fx.Delay.AB         0(A)/1(B)
+(Delay acts on C5 if C5 replaces the Delay Fx)
+
+--- SYSTEM SETTINGS ---
+PATCH OPTIONS:
+patch.asio[i]                   0 to ASIO input
+patch.OutA2[i]                  0 to ASIO output channel
+patch.OutA3[i]                  0 to ASIO output channel
+patch.OutA4[i]                  0 to ASIO output channel
+patch.OutA5[i]                  0 to ASIO output channel
+Patch.composite[j]              0 to 22 (1=first ch, 0=default BUS)
+Patch.insert[k]                 0/1     Virtual ASIO insert
+Patch.PostFaderComposite        0(PRE)/1(POST)
+Patch.PostFxInsert              0(PRE)/1(POST)
+  i=input channel (physical strips, 2 ch/strip), j=composite ch (0-7), k=input ch (0-21)
+
+SYSTEM OPTIONS:
+Option.sr                   44.1/48/88.2/96/176.4/192 kHz
+Option.ASIOsr               0=default ASIO SR, 1=preferred SR
+Option.delay[i]             0 to 500ms      BUS output delay
+Option.buffer.mme           128 to 2048
+Option.buffer.wdm           128 to 2048
+Option.buffer.ks            128 to 2048
+Option.buffer.asio          128 to 2048 (0=default)
+Option.mode.exclusif        0/1     WDM input exclusive
+Option.mode.swift           0/1     WDM swift mode
+Option.MonitorOnSEL         0/1
+Option.SliderMode           0(ABS)/1(RELATIVE)
+  i=output zero-based (physical bus only)
+
+--- TAPE RECORDER OPTIONS (Voicemeeter Banana) ---
+recorder.stop               0/1
+recorder.play               0/1
+recorder.replay             1           Play from 0
+recorder.ff                 0/1         Fast Forward
+recorder.rew                0/1         Rewind
+Recorder.goto               hh:mm:ss
+recorder.A1 to A5           0/1         Out BUS Assignation
+recorder.B1 to B3           0/1         Out BUS Assignation
+recorder.record             0/1
+recorder.pause              0/1
+Recorder.load               filename    Write only
+Recorder.samplerate
+Recorder.ArmStrip(i)                    Arming Input Status
+Recorder.ArmBus(i)                      Arming BUS Status
+Recorder.mode.recbus        0/1         0=record inputs
+Recorder.mode.PlayOnLoad    0/1
+Recorder.mode.Loop          0/1
+Recorder.mode.MultiTrack    0/1
+Recorder.bitResolution      8/16/24/32  (32=float)
+Recorder.Channel            1 to 8
+Recorder.kbps                           For mp3
+Recorder.FileType           1=WAV, 2=AIFF, 3=BWF, 100=MP3
+Recorder.gain               -60 to +12 dB   Playback Gain
+  i = zero-based (0 to 8)
+
+--- VBAN OPTIONS ---
+vban.Enable                         0/1
+vban.instream[i].on                 0/1
+vban.instream[i].name               String
+vban.instream[i].ip                 String  IP from
+vban.instream[i].port               16-bit  PORT
+vban.instream[i].sr                 11025 to 96000  Read only
+vban.instream[i].channel            1 to 8  Read only
+vban.instream[i].bit                        Read only
+vban.instream[i].quality            0 to 4  (0=Optimal)
+vban.instream[i].route              0 to 8  Strip Selector
+vban.outstream[i].on                0/1
+vban.outstream[i].name              String
+vban.outstream[i].ip                String  IP to
+vban.outstream[i].port              16-bit
+vban.outstream[i].sr                11025 to 96000
+vban.outstream[i].channel           1 to 8
+vban.outstream[i].bit               1=16bit PCM
+vban.outstream[i].quality           0 to 4
+vban.outstream[i].route             0 to 8  BUS selector
+  i = zero-based (0 to 7)
+
+VBAN Audio Engine Restart triggered by:
+  vban.Enable, vban.instream[i].port, vban.instream[i].quality, vban.outstream[i].quality
+
+VBAN SampleRates: 11025, 16000, 22050, 24000, 32000, 44100, 48000, 64000, 88200, 96000 Hz
+VBAN Quality: 0=Optimal, 1=Fast, 2=Medium, 3=Slow, 4=Very Slow
+VBAN Bit Resolution: 1=16bit PCM, 2=24bit PCM
+
+--- RELATIVE PARAMETERS ---
+Use += or -= to add/subtract from current value:
+  Strip[i].Gain += 3;   // add 3 dB
+  Strip[i].Gain -= 3;   // remove 3 dB
+  Strip[i].Mono += 1;   // toggle mono state
+  Strip[i].A1   += 1;   // toggle A1 assignation
+
+================================================================
+10. AUDIO DEVICE ENUMERATION
+================================================================
+
+INPUT DEVICES:
+nb = iVMR.VBVMR_Input_GetDeviceNumber();
+iVMR.VBVMR_Input_GetDeviceDescA(vi, &nType, szName, szHardwareId);
+  nType: VBVMR_DEVTYPE_MME, VBVMR_DEVTYPE_WDM, VBVMR_DEVTYPE_KS
+
+OUTPUT DEVICES:
+nb = iVMR.VBVMR_Output_GetDeviceNumber();
+iVMR.VBVMR_Output_GetDeviceDescA(vi, &nType, szName, szHardwareId);
+  nType: + VBVMR_DEVTYPE_ASIO (output A1 only)
+
+SELECTING DEVICE:
+Strip[i].Device.mme = "Device Name";
+Strip[i].Device.wdm = "Device Name";
+Strip[i].Device.ks  = "Device Name";
+Bus[j].Device.asio  = "Device Name";
+Bus[j].Device.mme   = "Device Name";
+Bus[j].Device.wdm   = "Device Name";
+Bus[j].Device.ks    = "Device Name";
+
+UNSELECTING:
+Strip[i].Device.mme = "";  // empty string
+
+================================================================
+11. VB-AUDIO CALLBACK
+================================================================
+
+FUNCTIONS:
+VBVMR_AudioCallbackRegister();
+VBVMR_AudioCallbackStart();
+VBVMR_AudioCallbackStop();
+VBVMR_AudioCallbackUnregister();
+
+Up to 3 callbacks from 3 different applications.
+
+CALLBACK TYPES:
+1. Input Insert (Pre-Strip) - process/record inputs before Voicemeeter processing
+2. Output Insert (Pre-Master BUS) - process outputs before master section
+3. Main (all I/O) - receive all I/O, record or replace output signal
+
+Called in order 1 → 2 → 3.
+
+AUDIO BUFFER STRUCTURE:
+typedef struct tagVBVMR_AUDIOBUFFER {
+    long  audiobuffer_sr;       // Sampling Rate
+    long  audiobuffer_nbs;      // samples per frame
+    long  audiobuffer_nbi;      // number of inputs
+    long  audiobuffer_nbo;      // number of outputs
+    float* audiobuffer_r[128];  // input buffers
+    float* audiobuffer_w[128];  // output buffers
+} VBVMR_T_AUDIOBUFFER;
+
+CHANNEL ORGANIZATION - INPUT CALLBACK:
+Voicemeeter Standard:
+  Strip#1(0,2ch) | Strip#2(2,2ch) | Virtual(4,8ch)
+
+Voicemeeter Banana:
+  Strip#1(0,2) | Strip#2(2,2) | Strip#3(4,2) | Virtual(6,8) | VirtualAUX(14,8)
+
+Voicemeeter Potato:
+  Strip#1(0,2)|Strip#2(2,2)|Strip#3(4,2)|Strip#4(6,2)|Strip#5(8,2)|Virtual(10,8)|VirtualAUX(18,8)|VAIO3(26,8)
+
+CHANNEL ORGANIZATION - OUTPUT CALLBACK:
+Voicemeeter Standard:
+  BUS A(0,8) | BUS B(8,8)
+
+Voicemeeter Banana:
+  BUS A1(0,8) | BUS A2(8,8) | BUS A3(16,8) | BUS B1(24,8) | BUS B2(32,8)
+
+Voicemeeter Potato:
+  A1(0,8)|A2(8,8)|A3(16,8)|A4(24,8)|A5(32,8)|B1(40,8)|B2(48,8)|B3(56,8)
+
+MAIN CALLBACK CHANNEL ORGANIZATION:
+Voicemeeter Banana (Inputs):
+  In#1(0,2)|In#2(2,2)|In#3(4,2)|V1(6,8)|V2(14,8)|A1(22,8)|A2(30,8)|A3(38,8)|B1(46,8)|B2(54,8)
+
+Voicemeeter Potato (Inputs):
+  In#1(0,2)|In#2(2,2)|In#3(4,2)|In#4(6,2)|In#5(8,2)
+  |V1(10,8)|V2(18,8)|V3(26,8)
+  |A1(34,8)|A2(42,8)|A3(50,8)|A4(58,8)|A5(66,8)
+  |B1(74,8)|B2(82,8)|B3(90,8)
+Output channels: same as Output Callback.
+
+CALLBACK COMMANDS:
+VBVMR_CBCOMMAND_STARTING  - Initialize DSP objects (first call)
+VBVMR_CBCOMMAND_ENDING    - Release structures (last call)
+VBVMR_CBCOMMAND_CHANGE    - Samplerate or buffer size changed
+VBVMR_CBCOMMAND_BUFFER_IN   - Process Input INSERT buffer
+VBVMR_CBCOMMAND_BUFFER_OUT  - Process Output INSERT buffer
+VBVMR_CBCOMMAND_BUFFER_MAIN - Process all I/O (Banana: 22in+40out; Potato: 34in+64out)
+
+CALLBACK SIGNATURE:
+long __stdcall PROCESSING_MyCallback(void* lpUser, long nCommand, void* lpData, long nnn);
+
+================================================================
+12. VOICEMEETER APO APPROACH
+================================================================
+Audio Callback Insert Point allows building Audio Processing Objects as applications.
+SDK provides 8x8 gain matrix example (vmr_matrix directory) for pre-Master Section Insert.
+Use as starting point for commercial DSP applications processing Voicemeeter BUSes.
+
+================================================================
+END OF DOCUMENTATION
+================================================================

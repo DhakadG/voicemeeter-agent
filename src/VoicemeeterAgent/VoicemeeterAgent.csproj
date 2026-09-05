@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>VoicemeeterAgent</AssemblyName>
+    <RootNamespace>VoicemeeterAgent</RootNamespace>
+    <Version>1.1.0</Version>
+    <ApplicationIcon>Resources\app.ico</ApplicationIcon>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RepoRoot>$(MSBuildProjectDirectory)\..\..\</RepoRoot>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="NAudio" Version="2.2.1" />
+  </ItemGroup>
+  <!-- A running tray instance holds a lock on the output exe and fails the build.
+       Close it first. Failure is expected and ignored when nothing is running. -->
+  <Target Name="StopRunningAgent" BeforeTargets="PrepareForBuild" Condition="'$(OS)' == 'Windows_NT'">
+    <Exec Command="taskkill /F /IM $(AssemblyName).exe /T &gt;nul 2&gt;&amp;1" IgnoreExitCode="true"
+          StandardOutputImportance="low" StandardErrorImportance="low" />
+  </Target>
+  <!-- Copy full output folder to a versioned releases/ subfolder on Release builds.
+       Copies exe + all DLLs + runtimeconfig.json so the folder is self-contained. -->
+  <Target Name="CopyToReleases" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <PropertyGroup>
+      <ReleaseVersionDir>$(RepoRoot)releases\VoicemeeterAgent-v$(Version)\</ReleaseVersionDir>
+    </PropertyGroup>
+    <MakeDir Directories="$(ReleaseVersionDir)" />
+    <ItemGroup>
+      <ReleaseFiles Include="$(OutputPath)*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(ReleaseFiles)" DestinationFolder="$(ReleaseVersionDir)" />
+  </Target>
+</Project>
