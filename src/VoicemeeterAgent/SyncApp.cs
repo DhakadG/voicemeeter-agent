@@ -90,8 +90,7 @@ internal sealed class SyncApp : IDisposable
         _mr5 = mr5;
         if (mr5 != null)
         {
-            // Speaker came or went: re-apply so the strip moves between unity and the digital fader.
-            mr5.ActiveChanged += _ => SyncNow();
+            mr5.ActiveChanged += OnMr5ActiveChanged;
             mr5.VolumeReported += OnSpeakerVolume;
         }
         _pollTimer = new System.Threading.Timer(OnPollTick, null, Timeout.Infinite, Timeout.Infinite);
@@ -363,6 +362,21 @@ internal sealed class SyncApp : IDisposable
 
     /// <summary>True when Windows volume should drive the MR5's own volume instead of the VM fader.</summary>
     public bool HardwareVolume => _config.HardwareVolume && _mr5 is { Active: true };
+
+    /// <summary>
+    /// Speaker became reachable (or went away). On arrival keep the speaker's own level: the bridge
+    /// reports it right after "link up" and <see cref="OnSpeakerVolume"/> moves Windows to match.
+    /// Pushing Windows → speaker here would race that report and leave the two out of step.
+    /// On departure, fall back to the digital fader.
+    /// </summary>
+    private void OnMr5ActiveChanged(bool active)
+    {
+        if (!_connected) return;
+        if (!(active && _config.HardwareVolume)) { SyncNow(); return; }
+        lock (_syncLock) { _lastSentGainDb = 0f; _lastSentMute = _watcher.CurrentMuted; }
+        _api.SetStripGain(TargetStrip, 0f);
+        _api.SetStripMute(TargetStrip, _watcher.CurrentMuted);
+    }
 
     /// <summary>Speaker volume changed (its knob, the MR5 app, the phone): move the Windows slider.</summary>
     private void OnSpeakerVolume(int step, int max)
