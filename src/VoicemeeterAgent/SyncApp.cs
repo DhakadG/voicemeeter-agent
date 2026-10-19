@@ -90,8 +90,7 @@ internal sealed class SyncApp : IDisposable
         _mr5 = mr5;
         if (mr5 != null)
         {
-            // Speaker came or went: re-apply so the strip moves between unity and the digital fader.
-            mr5.ActiveChanged += _ => SyncNow();
+            mr5.ActiveChanged += OnMr5ActiveChanged;
             mr5.VolumeReported += OnSpeakerVolume;
         }
         _pollTimer = new System.Threading.Timer(OnPollTick, null, Timeout.Infinite, Timeout.Infinite);
@@ -270,7 +269,8 @@ internal sealed class SyncApp : IDisposable
 
     private void ApplyCurrentVolume()
     {
-        if (HardwareVolume) _mr5!.SendVolume(_watcher.CurrentVolume);
+        // In hardware mode the speaker's own level wins: Windows adopts it, the strip goes to unity.
+        if (HardwareVolume) AdoptSpeakerLevel();
         float dB = ScalarToDb(HardwareVolume ? 1f : _watcher.CurrentVolume);
         lock (_syncLock) { _lastSentGainDb = dB; _lastSentMute = _watcher.CurrentMuted; }
         _api.SetStripGain(TargetStrip, dB);
@@ -364,10 +364,33 @@ internal sealed class SyncApp : IDisposable
     /// <summary>True when Windows volume should drive the MR5's own volume instead of the VM fader.</summary>
     public bool HardwareVolume => _config.HardwareVolume && _mr5 is { Active: true };
 
+    /// <summary>Last level the speaker reported (step, max); step -1 = unknown. Kept even while
+    /// Voicemeeter is down, so a Voicemeeter restart re-syncs from the speaker, not to it.</summary>
+    private volatile int _speakerStep = -1, _speakerMax = 1;
+
+    /// <summary>
+    /// Speaker became reachable (or went away). On arrival keep the speaker's own level: the bridge
+    /// reports it right after "link up" and Windows adopts it. Pushing Windows → speaker here would
+    /// race that report and leave the two out of step. On departure, fall back to the digital fader.
+    /// </summary>
+    private void OnMr5ActiveChanged(bool active)
+    {
+        if (!active) _speakerStep = -1; // may change elsewhere (phone) while we can't see it
+        SyncNow();
+    }
+
     /// <summary>Speaker volume changed (its knob, the MR5 app, the phone): move the Windows slider.</summary>
     private void OnSpeakerVolume(int step, int max)
     {
-        if (!_connected || !HardwareVolume) return;
+        (_speakerMax, _speakerStep) = (max, step);
+        if (_connected && HardwareVolume) AdoptSpeakerLevel();
+    }
+
+    /// <summary>Moves the Windows slider to the speaker's last reported level, if known.</summary>
+    private void AdoptSpeakerLevel()
+    {
+        int step = _speakerStep, max = _speakerMax;
+        if (step < 0) return;
         // Compare in speaker steps: the speaker has only max+1 positions, so a Windows value
         // that already rounds to this step must stay put or media-key stepping would snap back.
         if ((int)MathF.Round(_watcher.CurrentVolume * max, MidpointRounding.AwayFromZero) == step) return;
