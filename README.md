@@ -68,8 +68,7 @@ after the device has been visible for two consecutive checks.
 
 ### MR5 hardware volume
 
-For Edifier MR5 monitors fed from a Voicemeeter line out. With the
-[MR5 desktop app](https://github.com/DhakadG/edifier-mr5-desktop) running, tick
+For Edifier MR5 monitors fed from a Voicemeeter line out. With the MR5 desktop app running, tick
 **MR5 hardware volume** in the tray. Windows volume and media keys then set the speaker's own
 volume (0–30) over Bluetooth LE, and the Voicemeeter strip stays at 0 dB, so the signal is never
 attenuated twice and the line level stays high. Turning the speaker's knob moves the Windows slider.
