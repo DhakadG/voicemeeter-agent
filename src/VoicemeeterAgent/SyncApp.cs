@@ -28,6 +28,7 @@ internal sealed class SyncApp : IDisposable
     private readonly VoicemeeterApi _api;
     private readonly WindowsVolumeWatcher _watcher;
     private readonly AppConfig _config;
+    private readonly Mr5Bridge? _mr5;
     private readonly System.Threading.Timer _pollTimer;
 
     private bool _connected;
@@ -81,11 +82,18 @@ internal sealed class SyncApp : IDisposable
 
     // ─── Construction ────────────────────────────────────────────────────────
 
-    public SyncApp(VoicemeeterApi api, WindowsVolumeWatcher watcher, AppConfig config)
+    public SyncApp(VoicemeeterApi api, WindowsVolumeWatcher watcher, AppConfig config, Mr5Bridge? mr5 = null)
     {
         _api = api;
         _watcher = watcher;
         _config = config;
+        _mr5 = mr5;
+        if (mr5 != null)
+        {
+            // Speaker came or went: re-apply so the strip moves between unity and the digital fader.
+            mr5.ActiveChanged += _ => SyncNow();
+            mr5.VolumeReported += OnSpeakerVolume;
+        }
         _pollTimer = new System.Threading.Timer(OnPollTick, null, Timeout.Infinite, Timeout.Infinite);
     }
 
@@ -122,6 +130,13 @@ internal sealed class SyncApp : IDisposable
 
         // Suppress echoed notifications caused by our own Windows writes
         if (Environment.TickCount64 - _lastWindowsWriteTime < SuppressMs) return;
+
+        if (HardwareVolume)
+        {
+            // The speaker does the attenuation; Voicemeeter stays at unity (mute still goes through VM).
+            _mr5!.SendVolume(scalar);
+            scalar = 1f;
+        }
 
         float dB = ScalarToDb(scalar);
 
@@ -185,6 +200,16 @@ internal sealed class SyncApp : IDisposable
             !_api.GetStripMute(TargetStrip, out bool muted))
             return;
 
+        // In hardware mode the fader is pinned at unity, so only mute travels VM → Windows.
+        if (HardwareVolume)
+        {
+            if (muted == _watcher.CurrentMuted) return;
+            lock (_syncLock) _lastSentMute = muted;
+            _lastWindowsWriteTime = Environment.TickCount64;
+            _watcher.SetMute(muted);
+            return;
+        }
+
         // Thread-safe read of what we last sent
         float sentGain;
         bool sentMute;
@@ -239,7 +264,8 @@ internal sealed class SyncApp : IDisposable
 
     private void ApplyCurrentVolume()
     {
-        float dB = ScalarToDb(_watcher.CurrentVolume);
+        if (HardwareVolume) _mr5!.SendVolume(_watcher.CurrentVolume);
+        float dB = ScalarToDb(HardwareVolume ? 1f : _watcher.CurrentVolume);
         lock (_syncLock) { _lastSentGainDb = dB; _lastSentMute = _watcher.CurrentMuted; }
         _api.SetStripGain(TargetStrip, dB);
         _api.SetStripMute(TargetStrip, _watcher.CurrentMuted);
@@ -325,6 +351,22 @@ internal sealed class SyncApp : IDisposable
             _deviceSeenCount[b.Bus] = seen;
             if (seen >= 2) _api.SetBusDevice(b.Bus, b.Type, b.Name);
         }
+    }
+
+    // ─── MR5 hardware volume ─────────────────────────────────────────────────
+
+    /// <summary>True when Windows volume should drive the MR5's own volume instead of the VM fader.</summary>
+    public bool HardwareVolume => _config.HardwareVolume && _mr5 is { Active: true };
+
+    /// <summary>Speaker volume changed (its knob, the MR5 app, the phone): move the Windows slider.</summary>
+    private void OnSpeakerVolume(int step, int max)
+    {
+        if (!_connected || !HardwareVolume) return;
+        // Compare in speaker steps: the speaker has only max+1 positions, so a Windows value
+        // that already rounds to this step must stay put or media-key stepping would snap back.
+        if ((int)MathF.Round(_watcher.CurrentVolume * max, MidpointRounding.AwayFromZero) == step) return;
+        _lastWindowsWriteTime = Environment.TickCount64;
+        _watcher.SetVolume((float)step / max);
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────────

@@ -41,6 +41,13 @@ internal sealed class AppConfig
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public VolumeProfile Profile { get; set; } = VolumeProfile.Knee;
 
+    /// <summary>
+    /// When the Edifier MR5 app is running and its speaker is reachable, Windows volume drives
+    /// the speaker's own volume and the Voicemeeter strip stays at 0 dB. Falls back to the
+    /// digital fader whenever the speaker is not reachable.
+    /// </summary>
+    public bool HardwareVolume { get; set; }
+
     /// <summary>Bus-to-device bindings managed by the watchdog.</summary>
     public List<BusDeviceBinding> Buses { get; set; } = new();
 

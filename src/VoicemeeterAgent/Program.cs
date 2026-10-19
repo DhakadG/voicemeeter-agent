@@ -65,10 +65,11 @@ internal static class Program
         using var api = new VoicemeeterApi();
         using var watcher = new WindowsVolumeWatcher();
         var config = AppConfig.Load();
-        using var sync = new SyncApp(api, watcher, config);
+        using var mr5 = new Mr5Bridge();
+        using var sync = new SyncApp(api, watcher, config, mr5);
 
         // ── Tray icon ────────────────────────────────────────────────────────
-        using var trayIcon = BuildTrayIcon(sync, uiContext);
+        using var trayIcon = BuildTrayIcon(sync, mr5, uiContext);
         trayIcon.Visible = true;
 
         sync.Start();
@@ -83,7 +84,7 @@ internal static class Program
 
     // ─── Tray icon construction ───────────────────────────────────────────────
 
-    private static NotifyIcon BuildTrayIcon(SyncApp sync, SynchronizationContext uiContext)
+    private static NotifyIcon BuildTrayIcon(SyncApp sync, Mr5Bridge mr5, SynchronizationContext uiContext)
     {
         var menu = new ContextMenuStrip();
 
@@ -125,6 +126,25 @@ internal static class Program
             sync.Config.Save();
         };
 
+        var hardwareItem = new ToolStripMenuItem("MR5 hardware volume")
+        {
+            CheckOnClick = true,
+            Checked = sync.Config.HardwareVolume,
+            ToolTipText = "Windows volume sets the Edifier MR5's own volume and Voicemeeter stays at 0 dB. " +
+                          "Needs the MR5 app running; falls back to the Voicemeeter fader when the speaker is unreachable."
+        };
+        void ShowMr5State(bool active) => hardwareItem.Text =
+            "MR5 hardware volume" + (sync.Config.HardwareVolume ? (active ? "  (active)" : "  (speaker not reachable)") : "");
+        hardwareItem.CheckedChanged += (_, _) =>
+        {
+            sync.Config.HardwareVolume = hardwareItem.Checked;
+            sync.Config.Save();
+            ShowMr5State(mr5.Active);
+            sync.SyncNow();
+        };
+        mr5.ActiveChanged += active => uiContext.Post(_ => ShowMr5State(active), null);
+        ShowMr5State(mr5.Active);
+
         var startupItem = new ToolStripMenuItem("Start with Windows")
         {
             CheckOnClick = true,
@@ -144,7 +164,7 @@ internal static class Program
         menu.Items.AddRange(new ToolStripItem[]
         {
             statusItem, statusSeparator,
-            syncNowItem, volumeItem, devicesItem, watchdogItem, startupItem, separator, exitItem
+            syncNowItem, volumeItem, hardwareItem, devicesItem, watchdogItem, startupItem, separator, exitItem
         });
 
         return new NotifyIcon
