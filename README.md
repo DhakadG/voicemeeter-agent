@@ -66,6 +66,19 @@ the same slider, so every step gets smaller.
 Power the monitor off and the bus detaches within ~5 s. Power it back on and the bus re-attaches
 after the device has been visible for two consecutive checks.
 
+### MR5 hardware volume
+
+For Edifier MR5 monitors fed from a Voicemeeter line out. With the MR5 desktop app running, tick
+**MR5 hardware volume** in the tray. Windows volume and media keys then set the speaker's own
+volume (0–30) over Bluetooth LE, and the Voicemeeter strip stays at 0 dB, so the signal is never
+attenuated twice and the line level stays high. Turning the speaker's knob moves the Windows slider.
+Mute still goes through the Voicemeeter strip.
+
+When the speaker is off, asleep, or held by the phone's ConneX app, the agent falls back to the
+Voicemeeter fader on its own and switches back once the speaker is reachable again. The menu item
+shows which state it is in. The two apps talk over the local pipe `\\.\pipe\mr5-volume`
+(current user only).
+
 ## Configuration
 
 `%APPDATA%\VoicemeeterAgent\config.json`
@@ -88,6 +101,7 @@ after the device has been visible for two consecutive checks.
 | `MinGainDb` | −96 to −24 | Clamped to that range on load, so the curve inverses stay well defined. The tray offers −40/−50/−60; other values in range work but only from the file |
 | `DeviceWatchdogEnabled` | `true`/`false` | Same as the tray toggle |
 | `DeviceWatchdogIntervalMs` | ≥ 500 | Smaller values are raised to 500 on load |
+| `HardwareVolume` | `true`/`false` | Same as the **MR5 hardware volume** tray toggle |
 | `Buses[].Bus` | 0 = A1, 1 = A2, 2 = A3 | |
 | `Buses[].Type` | 1 = MME, 3 = WDM, 4 = KS, 5 = ASIO | |
 | `Buses[].Name` | string | Exact device name as Voicemeeter reports it |
