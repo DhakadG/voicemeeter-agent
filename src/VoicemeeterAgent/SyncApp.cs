@@ -128,8 +128,14 @@ internal sealed class SyncApp : IDisposable
     {
         if (!_connected) return;
 
-        // Suppress echoed notifications caused by our own Windows writes
-        if (Environment.TickCount64 - _lastWindowsWriteTime < SuppressMs) return;
+        // Suppress echoed volume notifications caused by our own Windows writes, but still pass
+        // mute through: a mute pressed inside the window would otherwise never reach Voicemeeter.
+        if (Environment.TickCount64 - _lastWindowsWriteTime < SuppressMs)
+        {
+            lock (_syncLock) _lastSentMute = muted;
+            _api.SetStripMute(TargetStrip, muted);
+            return;
+        }
 
         if (HardwareVolume)
         {

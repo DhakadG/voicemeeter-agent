@@ -39,9 +39,14 @@ internal sealed class Mr5Bridge : IDisposable
     {
         lock (_writeLock)
         {
+            // A failed write means the app is gone: go inactive now so the fader fallback kicks in
+            // before the read loop notices, instead of pinning Voicemeeter at unity meanwhile.
             try { _out?.WriteLine(line); }
-            catch (IOException) { /* app went away; the read loop notices */ }
-            catch (ObjectDisposedException) { }
+            catch (Exception e) when (e is IOException or ObjectDisposedException)
+            {
+                _out = null;
+                Set(pipeUp: false, linkUp: false);
+            }
         }
     }
 
